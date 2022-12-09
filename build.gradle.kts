@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "io.github.strange-qwq"
-version = "0.0.9"
+version = "0.1"
 
 repositories {
     maven {
@@ -37,9 +37,39 @@ val sonatypeUsername: String by project
 val sonatypePassword: String by project
 
 publishing {
+
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            pom {
+                name.set("mate-ddl-boot-starter")
+                description.set("根据实体自动更新数据库")
+                url.set("https://github.com/strange-qwq/mate-ddl-starter")
+                developers {
+                    developer {
+                        name.set("QWQ")
+                        email.set("1456158721@qq.com")
+                    }
+                }
+                scm {
+                    url.set("https://github.com/strange-qwq/mate-ddl-starter")
+                    connection.set("scm:git:https://github.com/strange-qwq/mate-ddl-starter.git")
+                    developerConnection.set("scm:git:https://github.com/strange-qwq/mate-ddl-starter.git")
+                }
+                licenses {
+                    license {
+                        name.set("MIT License")
+                        url.set("https://opensource.org/licenses/MIT")
+                    }
+                }
+            }
+        }
+    }
+
     repositories {
         maven {
-            url = uri("https://oss.sonatype.org/service/local/staging/deploy/maven2")
+            name = "mate-ddl-boot-starter"
+            url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
             credentials {
                 username = sonatypeUsername
                 password = sonatypePassword
@@ -47,9 +77,9 @@ publishing {
         }
     }
 
-    signing {
-        // 设置对生成文件进行签名
-        sign(publishing.publications)
-    }
+}
+
+signing {
+    sign(publishing.publications)
 }
 

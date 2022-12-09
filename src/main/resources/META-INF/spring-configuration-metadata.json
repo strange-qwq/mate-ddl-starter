@@ -1,0 +1,32 @@
+{
+  "groups": [
+    {
+      "name": "mate-ddl",
+      "type": "com.qwq.tools.mdsbs.config.MateDDLConfigProperty",
+      "sourceType": "com.qwq.tools.mdsbs.config.MateDDLConfigProperty"
+    }
+  ],
+  "properties": [
+    {
+      "name": "mate-ddl.enable",
+      "value": "java.lang.Boolean",
+      "sourceType": "com.qwq.tools.mdsbs.config.MateDDLConfigProperty"
+    },
+    {
+      "name": "mate-ddl.doThrow",
+      "value": "java.lang.Boolean",
+      "sourceType": "com.qwq.tools.mdsbs.config.MateDDLConfigProperty"
+    },
+    {
+      "name": "mate-ddl.type",
+      "value": "java.lang.String",
+      "sourceType": "com.qwq.tools.mdsbs.config.MateDDLConfigProperty"
+    },
+    {
+      "name": "mate-ddl.entityPackage",
+      "value": "java.util.List<java.lang.String>",
+      "sourceType": "com.qwq.tools.mdsbs.config.MateDDLConfigProperty"
+    }
+  ],
+  "hints": []
+}

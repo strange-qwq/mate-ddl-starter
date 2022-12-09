@@ -1,8 +1,11 @@
 package com.qwq.tools.mdsbs.config
 
 import com.baomidou.mybatisplus.annotation.*
+import com.qwq.tools.mdsbs.data.Field
+import com.qwq.tools.mdsbs.data.Table
 import org.postgresql.Driver
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.datasource.SimpleDriverDataSource
@@ -13,20 +16,11 @@ import kotlin.reflect.jvm.kotlinProperty
 
 /**
  * pgsql 数据库表自动更新器
- * @author QWQ
+ * @author Mar
  * @date 2022.12.08 16:25
  */
 @Configuration
 class PostgresqlConfig {
-
-    /**
-     * Entity 包名
-     */
-    private val packages = setOf(
-        "com.soiiy.beta.prod.data.module",
-        "com.soiiy.beta.prod.data.entity",
-        "com.soiiy.beta.prod.data.entity.item"
-    )
 
     /**
      * 数据库中长度为 25 的字段
@@ -72,18 +66,42 @@ class PostgresqlConfig {
     @Value("\${spring.datasource.password}")
     private lateinit var password: String
 
+    @Autowired
+    private lateinit var property: MateDDLConfigProperty
+
     private lateinit var dataSource: SimpleDriverDataSource
 
     private val log = LoggerFactory.getLogger(this::class.java)
 
     @PostConstruct
     private fun init() {
+        if(!property.enable) {
+            log.info("postgresql mate ddl is disabled")
+            return
+        } else if(property.entity.isEmpty()) {
+            log.info("postgresql mate ddl is enabled, but no entity package is set")
+            return
+        }
+        log.info("postgresql mate ddl init")
+        kotlin.runCatching {
+            exec()
+        }.onFailure {
+            log.error("postgresql mate ddl init failed", it)
+            if(property.throws) throw it
+        }
+    }
+
+    /**
+     * 执行
+     */
+    private fun exec() {
         dataSource = SimpleDriverDataSource(Driver(), url, username, password)
         val tables = getTables()
         val classLoader = Thread.currentThread().contextClassLoader
         val classSet = HashSet<Class<*>>()
         val entities = HashMap<String, Table>()
-        packages.forEach { pkg ->
+        // 读取包下的类
+        property.entity.forEach { pkg ->
             val path = pkg.replace('.', '/')
             val urls = classLoader.getResources(path)
             while(urls.hasMoreElements()) {
@@ -150,7 +168,7 @@ class PostgresqlConfig {
             log.info("表${it}不存在，将自动创建")
             execute(createTable(entities[it]!!))
         }
-        tables.forEach { table ->
+        if(property.type != "insert") tables.forEach { table ->
             if(entities.keys.contains(table.name)) {
                 val entity = entities[table.name]!!
                 entity.fields.forEach { field ->
@@ -296,35 +314,6 @@ class PostgresqlConfig {
         }.onFailure {
             if(doThrow) throw it
             else log.error("执行 SQL 语句失败", it)
-        }
-    }
-
-    /**
-     * 表结构实体
-     * @property name 表名
-     * @property fields 表字段
-     */
-    private data class Table(val name: String, val fields: List<Field>)
-
-    /**
-     * 字段结构实体
-     * @property name 字段名
-     * @property type 字段类型
-     * @property size 字段长度
-     * @property hasNull 是否可空
-     * @property isPrimary 是否是主键
-     * @property default 默认值
-     */
-    private data class Field (
-        var name: String,
-        var type: String,
-        var size: Int,
-        var hasNull: Boolean,
-        var isPrimary: Boolean,
-        var default: String?
-    ) {
-        init {
-            name = name.replace(Regex("[A-Z]")) { "_${it.value.lowercase()}" }
         }
     }
 
