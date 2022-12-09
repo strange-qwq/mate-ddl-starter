@@ -7,7 +7,7 @@ plugins {
     kotlin("plugin.spring") version "1.7.21"
 }
 
-group = "com.github.strange-qwq"
+group = "io.github.strange-qwq"
 version = "0.0.9"
 
 repositories {
