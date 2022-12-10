@@ -8,7 +8,11 @@ plugins {
 }
 
 group = "io.github.strange-qwq"
-version = "0.1"
+version = "0.1.1"
+
+java {
+    withSourcesJar()
+}
 
 repositories {
     maven {
@@ -23,14 +27,14 @@ dependencies {
     implementation("org.postgresql:postgresql")
     implementation("com.baomidou:mybatis-plus-boot-starter:3.5.2")
 
-    implementation("org.springframework.boot:spring-boot-starter")
+    //implementation("org.springframework.boot:spring-boot-starter")
 
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    //implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
 
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    //testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
 
 val sonatypeUsername: String by project
@@ -82,4 +86,3 @@ publishing {
 signing {
     sign(publishing.publications)
 }
-

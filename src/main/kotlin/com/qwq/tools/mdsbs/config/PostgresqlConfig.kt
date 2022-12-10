@@ -1,17 +1,18 @@
 package com.qwq.tools.mdsbs.config
 
 import com.baomidou.mybatisplus.annotation.*
-import com.qwq.tools.mdsbs.data.Field
-import com.qwq.tools.mdsbs.data.Table
+import com.qwq.tools.mdsbs.annotation.Field
+import com.qwq.tools.mdsbs.data.*
 import org.postgresql.Driver
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.datasource.SimpleDriverDataSource
 import java.io.File
 import java.net.JarURLConnection
-import javax.annotation.PostConstruct
+import javax.annotation.Resource
 import kotlin.reflect.jvm.kotlinProperty
 
 /**
@@ -20,42 +21,8 @@ import kotlin.reflect.jvm.kotlinProperty
  * @date 2022.12.08 16:25
  */
 @Configuration
+@EnableConfigurationProperties(MateDDLConfigProperty::class)
 class PostgresqlConfig {
-
-    /**
-     * 数据库中长度为 25 的字段
-     */
-    private val size25Field = listOf(
-        "type",
-        "state",
-        "status"
-    )
-
-    /**
-     * 数据库中长度为 50 的字段
-     */
-    private val size50Fields = listOf(
-        "id",
-        "pid",
-        "project",
-        "subject",
-        "trade_user",
-        "trade_user_raw",
-        "trade_no",
-        "trade_out",
-        "code",
-        "order",
-        "refund"
-    )
-
-    /**
-     * 数据库中存 text 的字段
-     */
-    private val sizeTextFields = listOf(
-        "data",
-        "preview",
-        "content"
-    )
 
     @Value("\${spring.datasource.url}")
     private lateinit var url: String
@@ -66,15 +33,15 @@ class PostgresqlConfig {
     @Value("\${spring.datasource.password}")
     private lateinit var password: String
 
-    @Autowired
+    @Resource
     private lateinit var property: MateDDLConfigProperty
 
     private lateinit var dataSource: SimpleDriverDataSource
 
     private val log = LoggerFactory.getLogger(this::class.java)
 
-    @PostConstruct
-    private fun init() {
+    @Bean
+    fun init() {
         if(!property.enable) {
             log.info("postgresql mate ddl is disabled")
             return
@@ -99,7 +66,7 @@ class PostgresqlConfig {
         val tables = getTables()
         val classLoader = Thread.currentThread().contextClassLoader
         val classSet = HashSet<Class<*>>()
-        val entities = HashMap<String, Table>()
+        val entities = HashMap<String, TableData>()
         // 读取包下的类
         property.entity.forEach { pkg ->
             val path = pkg.replace('.', '/')
@@ -137,53 +104,90 @@ class PostgresqlConfig {
                     return@f
                 }
                 val tableName = tableNameAnnotation.value
-                val fields = clazz.declaredFields.mapNotNull {
-                    val isExist = kotlin.runCatching { it.getAnnotation(TableField::class.java) }.getOrNull()?.exist ?: true
+                val fieldData = clazz.declaredFields.mapNotNull { field ->
+                    val tableFieldAnn = kotlin.runCatching { field.getAnnotation(TableField::class.java) }.getOrNull()
+                    val fieldName = tableFieldAnn?.value?.replace("\"", "").orEmpty().ifBlank { field.name }
+                    val isExist = tableFieldAnn?.exist ?: true
                     if(!isExist) return@mapNotNull null
-                    val isPrimary = kotlin.runCatching { it.getAnnotation(TableId::class.java) }.getOrNull() != null
-                    val type = it.kotlinProperty?.returnType?.toString()?.substringAfterLast(".") ?: it.type.simpleName
-                    val hasNull = type.contains("?")
-                    var size = 0
-                    if(size25Field.contains(it.name)) size = 25
-                    else if(size50Fields.contains(it.name)) size = 50
-                    when(type.replace("?", "")) {
-                        "String"                             -> {
-                            val t = if(sizeTextFields.contains(it.name)) "text" else "varchar"
-                            Field(it.name, t, size, hasNull, isPrimary, null)
-                        }
-                        "Int"                                -> Field(it.name, "int4", 0, hasNull, isPrimary, null)
-                        "Long"                               -> Field(it.name, "int8", 0, hasNull, isPrimary, null)
-                        "Float"                              -> Field(it.name, "float4", 0, hasNull, isPrimary, null)
-                        "Double"                             -> Field(it.name, "float8", 0, hasNull, isPrimary, null)
-                        "Boolean"                            -> Field(it.name, "bool", 0, hasNull, isPrimary, null)
-                        "Date", "LocalDate", "LocalDateTime" -> Field(it.name, "timestamp", 6, hasNull, isPrimary, null)
-                        else                                 -> Field(it.name, "json", 0, hasNull, isPrimary, null)
+                    val fieldAnn = kotlin.runCatching { field.getAnnotation(Field::class.java) }.getOrNull()
+                    val size = fieldAnn?.size ?: 0
+                    val decimal = fieldAnn?.decimal ?: 0
+                    val comment = fieldAnn?.comment.orEmpty().ifBlank { fieldName }
+                    val default = fieldAnn?.default.orEmpty()
+                    var type = fieldAnn?.type ?: TypeEnum.DEFAULT
+                    var hasNull = fieldAnn?.hasNull ?: TypeEnum.DEFAULT
+                    var primary = fieldAnn?.primary ?: TypeEnum.DEFAULT
+                    if(type == TypeEnum.DEFAULT || hasNull == TypeEnum.DEFAULT) {
+                        val value = field.kotlinProperty?.returnType?.toString()?.substringAfterLast(".") ?: field.type.simpleName
+                        type = kotlin.runCatching {
+                            TypeEnum.valueOf(value.uppercase().replace("?", ""))
+                        }.getOrElse { TypeEnum.ANY }
+                        hasNull = if(value.contains("?")) TypeEnum.YES else TypeEnum.NO
                     }
+                    if(primary == TypeEnum.DEFAULT) {
+                        val isPrimary = kotlin.runCatching { field.getAnnotation(TableId::class.java) }.getOrNull() != null
+                        primary = if(isPrimary) TypeEnum.YES else TypeEnum.NO
+                    }
+                    FieldData(
+                        fieldName,
+                        type.value,
+                        size,
+                        decimal,
+                        hasNull == TypeEnum.YES,
+                        primary == TypeEnum.YES,
+                        default,
+                        comment
+                    )
                 }
-                val table = Table(tableName, fields)
-                entities[tableName] = table
+                val tableData = TableData(tableName, fieldData)
+                entities[tableName] = tableData
             }
         }
-        entities.keys.subtract(tables.map { it.name }.toSet()).forEach {
+        if(property.type != "delete") entities.keys.subtract(tables.map { it.name }.toSet()).forEach {
             log.info("表${it}不存在，将自动创建")
             execute(createTable(entities[it]!!))
         }
-        if(property.type != "insert") tables.forEach { table ->
-            if(entities.keys.contains(table.name)) {
-                val entity = entities[table.name]!!
-                entity.fields.forEach { field ->
-                    val tableField = table.fields.find { it.name == field.name }
-                    if(tableField == null) {
-                        log.info("表${table.name}缺少字段${field.name}，开始自动添加")
-                        updateTable(table, entity)?.let { execute(it) }
-                    } else if(field.type != tableField.type) {
-                        log.info("表${table.name}字段${field.name}类型${tableField.type}与实体类${field.type}不一致，开始自动修改")
-                        updateTable(table, entity)?.let { execute(it) }
+        when(property.type) {
+            "update"        -> tables.forEach { table ->
+                if(entities.keys.contains(table.name)) {
+                    val entity = entities[table.name]!!
+                    entity.fieldData.forEach { field ->
+                        val tableField = table.fieldData.find { it.name == field.name }
+                        if(tableField == null) {
+                            log.info("表${table.name}缺少字段${field.name}，开始自动添加")
+                            updateTable(table, entity)?.let { execute(it) }
+                        } else if(field.type != tableField.type) {
+                            log.info("表${table.name}字段${field.name}类型${tableField.type}与实体类${field.type}不一致，开始自动修改")
+                            updateTable(table, entity)?.let { execute(it) }
+                        }
                     }
+                } else {
+                    log.info("表${table.name}的实体已被删除，请手动前往数据库删除该表")
                 }
-                // log.info("表${table.name}已存在实体，检查字段...")
-            } else {
-                log.info("表${table.name}的实体已被删除，请手动前往数据库删除该表")
+            }
+            "delete_update" -> tables.forEach { table ->
+                if(entities.keys.contains(table.name)) {
+                    val entity = entities[table.name]!!
+                    entity.fieldData.forEach { field ->
+                        val tableField = table.fieldData.find { it.name == field.name }
+                        if(tableField == null) {
+                            log.info("表${table.name}缺少字段${field.name}，开始删除重建")
+                            execute(deleteTable(entity))
+                            execute(createTable(entity))
+                        } else if(field.type != tableField.type) {
+                            log.info("表${table.name}字段${field.name}类型${tableField.type}与实体类${field.type}不一致，开始删除重建")
+                            execute(deleteTable(entity))
+                            execute(createTable(entity))
+                        }
+                    }
+                } else {
+                    log.info("表${table.name}的实体已被删除，请手动前往数据库删除该表")
+                }
+            }
+            "delete"        -> entities.values.forEach { table ->
+                log.info("表${table.name}开始删除重建")
+                execute(deleteTable(table))
+                execute(createTable(table))
             }
         }
     }
@@ -191,59 +195,75 @@ class PostgresqlConfig {
     /**
      * 获取表结构
      */
-    private fun getTables(): List<Table> {
-        val result = ArrayList<Table>()
+    private fun getTables(): List<TableData> {
+        val result = ArrayList<TableData>()
         val metaData = dataSource.connection.metaData
         val tables = metaData.getTables(null, "public", "%", arrayOf("TABLE"))
         while(tables.next()) {
             val tableName = tables.getString("TABLE_NAME")
             var columns = metaData.getColumns(null, "public", tableName, "%")
-            val fields = ArrayList<Field>()
+            val fieldDataList = ArrayList<FieldData>()
             while(columns.next()) {
                 val columnName = columns.getString("COLUMN_NAME")
                 val columnType = columns.getString("TYPE_NAME")
                 val columnSize = columns.getInt("COLUMN_SIZE")
+                val columnDecimal = columns.getInt("DECIMAL_DIGITS")
                 val columnNullable = columns.getInt("NULLABLE")
                 val columnDefault = columns.getString("COLUMN_DEF")
-                val field = Field(columnName, columnType, columnSize, columnNullable == 0, false, columnDefault)
-                fields.add(field)
+                val columnComment = columns.getString("REMARKS")
+                val fieldData = FieldData(
+                    columnName,
+                    columnType,
+                    columnSize,
+                    columnDecimal,
+                    columnNullable == 0,
+                    false,
+                    columnDefault,
+                    columnComment
+                )
+                fieldDataList.add(fieldData)
             }
             columns = metaData.getPrimaryKeys(null, "public", tableName)
             while(columns.next()) {
                 val columnName = columns.getString("COLUMN_NAME")
-                fields.find { it.name == columnName }?.isPrimary = true
+                fieldDataList.find { it.name == columnName }?.primary = true
             }
-            result.add(Table(tableName, fields))
+            result.add(TableData(tableName, fieldDataList))
         }
         return result
     }
 
     /**
      * 创建表
-     * @param table 表结构实体
+     * @param tableData 表结构实体
      */
-    private fun createTable(table: Table): String {
-        val createSql = StringBuilder("CREATE TABLE \"${table.name}\" (\n")
-        table.fields.forEach { field ->
+    private fun createTable(tableData: TableData): String {
+        val createSql = StringBuilder("CREATE TABLE \"${tableData.name}\" (\n")
+        val commentSql = StringBuilder()
+        tableData.fieldData.forEach { field ->
             createSql.append("\t\"${field.name}\" ${field.type}")
             spliceFieldProperties(field, createSql)
             createSql.append(",\n")
+            if(!field.comment.isNullOrBlank()) {
+                commentSql.append("COMMENT ON COLUMN \"${tableData.name}\".\"${field.name}\" IS '${field.comment}';\n")
+            }
         }
         createSql.append("\tPRIMARY KEY (")
-        createSql.append(table.fields.filter { it.isPrimary }.joinToString(prefix = "\"", postfix = "\"") { it.name })
-        createSql.append(")\n);\nALTER TABLE \"${table.name}\" OWNER TO \"postgres\";")
+        createSql.append(tableData.fieldData.filter { it.primary }.joinToString { "\"${it.name}\"" })
+        createSql.append(")\n);\n")
+        if(commentSql.isNotBlank()) createSql.append(commentSql)
         return createSql.toString()
     }
 
     /**
-     * 更新表结构
-     * @param table 原表结构实体
+     * 更新表
+     * @param tableData 原表结构实体
      * @param entity 新的表结构实体
      */
-    private fun updateTable(table: Table, entity: Table): String? {
+    private fun updateTable(tableData: TableData, entity: TableData): String? {
         val updateSql = StringBuilder()
-        entity.fields.forEach { field ->
-            val tableField = table.fields.find { it.name == field.name }
+        entity.fieldData.forEach { field ->
+            val tableField = tableData.fieldData.find { it.name == field.name }
             if(tableField == null) {
                 // 缺少字段
                 updateSql.append("\tADD COLUMN \"${field.name}\" ${field.type}")
@@ -274,29 +294,37 @@ class PostgresqlConfig {
                 }
             }
         }
-        val primaryKeys = entity.fields.filter { it.isPrimary }.map { it.name }
-        val tablePrimaryKeys = table.fields.filter { it.isPrimary }.map { it.name }
+        val primaryKeys = entity.fieldData.filter { it.primary }.map { it.name }
+        val tablePrimaryKeys = tableData.fieldData.filter { it.primary }.map { it.name }
         if(primaryKeys != tablePrimaryKeys) {
             // 主键不一致
-            updateSql.append("\tDROP CONSTRAINT \"${table.name}_pkey\",\n")
-            updateSql.append("\tADD CONSTRAINT \"${table.name}_pkey\" PRIMARY KEY (${primaryKeys.joinToString(prefix = "\"", postfix = "\"")}),")
+            updateSql.append("\tDROP CONSTRAINT \"${tableData.name}_pkey\",\n")
+            updateSql.append("\tADD CONSTRAINT \"${tableData.name}_pkey\" PRIMARY KEY (${primaryKeys.joinToString{ "\"${it}\"" }}),")
         }
         return if(updateSql.isBlank()) null else {
-            "ALTER TABLE \"${table.name}\" \n " + updateSql.replace(Regex(",\\s?\$"), "") + ";"
+            "ALTER TABLE \"${tableData.name}\" \n " + updateSql.replace(Regex(",\\s?\$"), "") + ";"
         }
     }
 
     /**
+     * 删除表
+     * @param tableData 表结构实体
+     */
+    private fun deleteTable(tableData: TableData): String {
+        return "DROP TABLE \"${tableData.name}\";"
+    }
+
+    /**
      * 拼接字段属性
-     * @param field 字段结构实体
+     * @param fieldData 字段结构实体
      * @param sql SQL 生成器
      */
-    private fun spliceFieldProperties(field: Field, sql: StringBuilder) {
-        if(field.size > 0) sql.append("(${field.size})")
-        if(!field.hasNull) {
+    private fun spliceFieldProperties(fieldData: FieldData, sql: StringBuilder) {
+        if(fieldData.size > 0) sql.append("(${fieldData.size})")
+        if(!fieldData.hasNull || fieldData.primary) {
             sql.append(" NOT NULL")
-            if(!field.default.isNullOrBlank()) sql.append(" DEFAULT ${field.default}")
         }
+        if(!fieldData.default.isNullOrBlank()) sql.append(" DEFAULT ${fieldData.default}")
     }
 
     /**

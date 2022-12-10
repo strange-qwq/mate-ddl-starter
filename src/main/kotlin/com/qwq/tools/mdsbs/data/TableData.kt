@@ -6,6 +6,6 @@ package com.qwq.tools.mdsbs.data
  * @date 2022.12.09 15:07
  *
  * @property name 表名
- * @property fields 表字段
+ * @property fieldData 表字段
  */
-data class Table(val name: String, val fields: List<Field>)
+data class TableData(val name: String, val fieldData: List<FieldData>)
