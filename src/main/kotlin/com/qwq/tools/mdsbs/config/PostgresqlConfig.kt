@@ -99,11 +99,13 @@ class PostgresqlConfig {
                 }
             }
             classSet.forEach f@{ clazz ->
-                val tableNameAnnotation = kotlin.runCatching { clazz.getAnnotation(TableName::class.java) }.getOrElse {
+                val tableNameAnnotation = kotlin.runCatching { clazz.getAnnotation(TableName::class.java) }.getOrNull()
+                if(tableNameAnnotation == null) {
                     log.warn("实体类${clazz.name}未添加TableName注解，将跳过解析并标记为已删除")
                     return@f
                 }
-                val tableName = tableNameAnnotation.value
+                var tableName = kotlin.runCatching { tableNameAnnotation.value }.getOrElse { "" }
+                if(tableName.isBlank()) tableName = clazz.simpleName
                 val fieldData = clazz.declaredFields.mapNotNull { field ->
                     val tableFieldAnn = kotlin.runCatching { field.getAnnotation(TableField::class.java) }.getOrNull()
                     val fieldName = tableFieldAnn?.value?.replace("\"", "").orEmpty().ifBlank { field.name }
