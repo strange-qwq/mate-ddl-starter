@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "io.github.strange-qwq"
-version = "0.1.1"
+version = "0.1.2"
 
 java {
     withSourcesJar()
@@ -39,6 +39,10 @@ dependencies {
 
 val sonatypeUsername: String by project
 val sonatypePassword: String by project
+val githubUsername: String by project
+val githubToken: String by project
+val localUsername: String by project
+val localPassword: String by project
 
 publishing {
 
@@ -72,11 +76,28 @@ publishing {
 
     repositories {
         maven {
-            name = "mate-ddl-boot-starter"
+            name = "sonatype"
             url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
             credentials {
                 username = sonatypeUsername
                 password = sonatypePassword
+            }
+        }
+        maven {
+            name = "github"
+            url = uri("https://maven.pkg.github.com/strange-qwq/mate-ddl-starter")
+            credentials {
+                username = githubUsername
+                password = githubToken
+            }
+        }
+        maven {
+            isAllowInsecureProtocol = true
+            name = "local"
+            url = uri("http://192.168.110.246:8081/repository/release/")
+            credentials {
+                username = localUsername
+                password = localPassword
             }
         }
     }
