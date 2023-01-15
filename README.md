@@ -65,6 +65,7 @@
     * 字段类型：`customType`，可选，若 type 的枚举中不包含该类型，可手动指定，不为空字符串时会自动覆盖 type 字段
     * 是否可空：`hasNull`，可选（`TypeEnum.YES`：可空，`TypeEnum.NO`：不可空）
     * 是否主键：`primary`，可选（`TypeEnum.YES`：是，`TypeEnum.NO`：否）
+
   注：
     * 读取实体类字段时会同时读取 `@TableField` 注解，若 `exist` 为 `false` 则会忽略该字段
     * 读取实体类字段时会同时读取 `@TableId` 注解，若存在该注解，则会覆盖 `@Field.primary` 字段，使其成为主键
