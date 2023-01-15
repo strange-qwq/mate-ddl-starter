@@ -9,6 +9,7 @@ version = "1.0"
 
 java {
     withSourcesJar()
+    withJavadocJar()
 }
 
 repositories {
@@ -75,7 +76,7 @@ publishing {
                 password = sonatypePassword
             }
         }
-        maven {
+        /* maven {
             name = "github"
             url = uri("https://maven.pkg.github.com/strange-qwq/mate-ddl-starter")
             credentials {
@@ -91,7 +92,7 @@ publishing {
                 username = localUsername
                 password = localPassword
             }
-        }
+        } */
     }
 
 }
