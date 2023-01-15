@@ -5,43 +5,53 @@ import com.qwq.tools.mdsbs.annotation.Field
 import com.qwq.tools.mdsbs.data.*
 import org.postgresql.Driver
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.context.properties.EnableConfigurationProperties
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
+import org.springframework.boot.env.OriginTrackedMapPropertySource
+import org.springframework.context.ApplicationContextInitializer
+import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.jdbc.datasource.SimpleDriverDataSource
 import java.io.File
 import java.net.JarURLConnection
-import javax.annotation.Resource
+import java.net.URLDecoder
 import kotlin.reflect.jvm.kotlinProperty
+import kotlin.text.Charsets.UTF_8
 
 /**
  * pgsql 数据库表自动更新器
- * @author Mar
+ * @author QWQ
  * @date 2022.12.08 16:25
  */
-@Configuration
-@EnableConfigurationProperties(MateDDLConfigProperty::class)
-class PostgresqlConfig {
+class PostgresqlConfig: ApplicationContextInitializer<ConfigurableApplicationContext> {
 
-    @Value("\${spring.datasource.url}")
     private lateinit var url: String
 
-    @Value("\${spring.datasource.username}")
     private lateinit var username: String
 
-    @Value("\${spring.datasource.password}")
     private lateinit var password: String
 
-    @Resource
     private lateinit var property: MateDDLConfigProperty
 
     private lateinit var dataSource: SimpleDriverDataSource
 
     private val log = LoggerFactory.getLogger(this::class.java)
 
-    @Bean
-    fun init() {
+    override fun initialize(applicationContext: ConfigurableApplicationContext) {
+        val env = applicationContext.environment
+        val sources = env.propertySources.find { it is OriginTrackedMapPropertySource }
+        // 读取实体类包名（如果有更好的读取方式，欢迎PR）
+        val entityPackage = ArrayList<String>()
+        var index = 0
+        while (true) {
+            val key = sources?.getProperty("mate-ddl.entity[${index}]")?.toString() ?: break
+            entityPackage.add(key)
+            index++
+        }
+        property = MateDDLConfigProperty(
+            env.getProperty("mate-ddl.enable", Boolean::class.java, false),
+            env.getProperty("mate-ddl.throws", Boolean::class.java, false),
+            env.getProperty("mate-ddl.default-json-type", "jsonb"),
+            env.getProperty("mate-ddl.type", "insert"),
+            entityPackage,
+        )
         if(!property.enable) {
             log.info("postgresql mate ddl is disabled")
             return
@@ -51,10 +61,14 @@ class PostgresqlConfig {
         }
         log.info("postgresql mate ddl init")
         kotlin.runCatching {
+            url = applicationContext.environment.getProperty("spring.datasource.url").orEmpty()
+            username = applicationContext.environment.getProperty("spring.datasource.username").orEmpty()
+            password = applicationContext.environment.getProperty("spring.datasource.password").orEmpty()
             exec()
         }.onFailure {
             log.error("postgresql mate ddl init failed", it)
-            if(property.throws) throw it
+            it.printStackTrace()
+            if(property.throws) applicationContext.close()
         }
     }
 
@@ -75,7 +89,8 @@ class PostgresqlConfig {
                 urls.nextElement()?.let { url ->
                     val protocol = url.protocol
                     if(protocol == "file") {
-                        val files = File(url.path).listFiles() ?: throw Exception("包名${pkg}不存在")
+                        log.info("postgresql mate ddl read entity from file: ${URLDecoder.decode(url.path, UTF_8)}")
+                        val files = File(URLDecoder.decode(url.path, UTF_8)).listFiles() ?: throw Exception("包名${pkg}不存在")
                         files.forEach { file ->
                             if(file.isFile && file.name.endsWith(".class")) {
                                 val name = file.name.substring(0, file.name.lastIndexOf("."))
@@ -84,6 +99,7 @@ class PostgresqlConfig {
                             }
                         }
                     } else if(protocol == "jar") {
+                        log.info("postgresql mate ddl read entity from jar")
                         val jar = url.openConnection() as JarURLConnection
                         val jarFile = jar.jarFile
                         val entries = jarFile.entries()
@@ -107,38 +123,48 @@ class PostgresqlConfig {
                 var tableName = kotlin.runCatching { tableNameAnnotation.value }.getOrElse { "" }
                 if(tableName.isBlank()) tableName = clazz.simpleName
                 val fieldData = clazz.declaredFields.mapNotNull { field ->
+                    val tableIdAnn = kotlin.runCatching { field.getAnnotation(TableId::class.java) }.getOrNull()
                     val tableFieldAnn = kotlin.runCatching { field.getAnnotation(TableField::class.java) }.getOrNull()
                     val fieldName = tableFieldAnn?.value?.replace("\"", "").orEmpty().ifBlank { field.name }
                     val isExist = tableFieldAnn?.exist ?: true
                     if(!isExist) return@mapNotNull null
                     val fieldAnn = kotlin.runCatching { field.getAnnotation(Field::class.java) }.getOrNull()
-                    val size = fieldAnn?.size ?: 0
-                    val decimal = fieldAnn?.decimal ?: 0
-                    val comment = fieldAnn?.comment.orEmpty().ifBlank { fieldName }
-                    val default = fieldAnn?.default.orEmpty()
-                    var type = fieldAnn?.type ?: TypeEnum.DEFAULT
+                    var size = fieldAnn?.size ?: 0
+                    var type =
+                        if(fieldAnn?.customType.isNullOrBlank()) fieldAnn?.type?.value.orEmpty()
+                        else fieldAnn?.customType.orEmpty()
                     var hasNull = fieldAnn?.hasNull ?: TypeEnum.DEFAULT
-                    var primary = fieldAnn?.primary ?: TypeEnum.DEFAULT
-                    if(type == TypeEnum.DEFAULT || hasNull == TypeEnum.DEFAULT) {
+                    var primary: TypeEnum = TypeEnum.NO
+                    if(fieldAnn?.primary == TypeEnum.YES || tableIdAnn != null) primary = TypeEnum.YES
+                    if(type.isBlank() || hasNull == TypeEnum.DEFAULT) {
                         val value = field.kotlinProperty?.returnType?.toString()?.substringAfterLast(".") ?: field.type.simpleName
-                        type = kotlin.runCatching {
-                            TypeEnum.valueOf(value.uppercase().replace("?", ""))
-                        }.getOrElse { TypeEnum.ANY }
+                        type = when(value.replace("?", "")) {
+                            "String" -> TypeEnum.VARCHAR.value
+                            "Byte", "Boolean" -> TypeEnum.INT2.value
+                            "Short", "Int" -> TypeEnum.INT4.value
+                            "Long" -> TypeEnum.INT8.value
+                            "Float" -> TypeEnum.FLOAT4.value
+                            "Double" -> TypeEnum.FLOAT8.value
+                            "Date", "LocalDate", "LocalDateTime", "LocalTime" -> TypeEnum.TIMESTAMP.value
+                            else -> kotlin.runCatching {
+                                TypeEnum.valueOf(property.defaultJsonType.uppercase()).value
+                            }.getOrElse {
+                                throw IllegalArgumentException("非法的 JSON 字段默认类型：${property.defaultJsonType}")
+                            }
+                        }
                         hasNull = if(value.contains("?")) TypeEnum.YES else TypeEnum.NO
                     }
-                    if(primary == TypeEnum.DEFAULT) {
-                        val isPrimary = kotlin.runCatching { field.getAnnotation(TableId::class.java) }.getOrNull() != null
-                        primary = if(isPrimary) TypeEnum.YES else TypeEnum.NO
-                    }
+                    if(type == TypeEnum.CHAR.value && size == 0) size = 255
+                    if(type == TypeEnum.VARCHAR.value && size == 0) size = 255
                     FieldData(
                         fieldName,
-                        type.value,
+                        type,
                         size,
-                        decimal,
+                        fieldAnn?.decimal ?: 0,
                         hasNull == TypeEnum.YES,
                         primary == TypeEnum.YES,
-                        default,
-                        comment
+                        fieldAnn?.default,
+                        fieldAnn?.comment.orEmpty().ifBlank { fieldName }
                     )
                 }
                 val tableData = TableData(tableName, fieldData)

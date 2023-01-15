@@ -12,25 +12,27 @@ enum class TypeEnum(val value: String) {
 
     CHAR("char"),
 
-    STRING("varchar"),
+    VARCHAR("varchar"),
 
-    INT("int4"),
+    INT2("int2"),
 
-    LONG("int8"),
+    INT4("int4"),
 
-    FLOAT("float4"),
+    INT8("int8"),
 
-    DOUBLE("float8"),
+    FLOAT2("float2"),
 
-    BOOLEAN("bool"),
+    FLOAT4("float4"),
 
-    DATE("timestamp"),
+    FLOAT8("float8"),
 
-    LOCALDATE("timestamp"),
+    BOOL("bool"),
 
-    LOCALDATETIME("timestamp"),
+    TIMESTAMP("timestamp"),
 
-    ANY("json"),
+    JSON("json"),
+
+    JSONB("jsonb"),
 
     YES("1"),
 

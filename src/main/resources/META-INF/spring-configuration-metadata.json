@@ -23,7 +23,7 @@
       "sourceType": "com.qwq.tools.mdsbs.config.MateDDLConfigProperty"
     },
     {
-      "name": "mate-ddl.entityPackage",
+      "name": "mate-ddl.entity",
       "value": "java.util.List<java.lang.String>",
       "sourceType": "com.qwq.tools.mdsbs.config.MateDDLConfigProperty"
     }
