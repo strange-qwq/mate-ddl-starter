@@ -136,24 +136,23 @@ class PostgresqlConfig: ApplicationContextInitializer<ConfigurableApplicationCon
                     var hasNull = fieldAnn?.hasNull ?: TypeEnum.DEFAULT
                     var primary: TypeEnum = TypeEnum.NO
                     if(fieldAnn?.primary == TypeEnum.YES || tableIdAnn != null) primary = TypeEnum.YES
-                    if(type.isBlank() || hasNull == TypeEnum.DEFAULT) {
-                        val value = field.kotlinProperty?.returnType?.toString()?.substringAfterLast(".") ?: field.type.simpleName
-                        type = when(value.replace("?", "")) {
-                            "String" -> TypeEnum.VARCHAR.value
-                            "Byte", "Boolean" -> TypeEnum.INT2.value
-                            "Short", "Int" -> TypeEnum.INT4.value
-                            "Long" -> TypeEnum.INT8.value
-                            "Float" -> TypeEnum.FLOAT4.value
-                            "Double" -> TypeEnum.FLOAT8.value
-                            "Date", "LocalDate", "LocalDateTime", "LocalTime" -> TypeEnum.TIMESTAMP.value
-                            else -> kotlin.runCatching {
-                                TypeEnum.valueOf(property.defaultJsonType.uppercase()).value
-                            }.getOrElse {
-                                throw IllegalArgumentException("非法的 JSON 字段默认类型：${property.defaultJsonType}")
-                            }
+                    val fieldType = field.kotlinProperty?.returnType?.toString()?.substringAfterLast(".") ?: field.type.simpleName
+                    if(type.isBlank()) type = when(fieldType.replace("?", "")) {
+                        "String" -> TypeEnum.VARCHAR.value
+                        "Boolean" -> TypeEnum.BOOL.value
+                        "Byte" -> TypeEnum.INT2.value
+                        "Short", "Int" -> TypeEnum.INT4.value
+                        "Long" -> TypeEnum.INT8.value
+                        "Float" -> TypeEnum.FLOAT4.value
+                        "Double" -> TypeEnum.FLOAT8.value
+                        "Date", "LocalDate", "LocalDateTime", "LocalTime" -> TypeEnum.TIMESTAMP.value
+                        else -> kotlin.runCatching {
+                            TypeEnum.valueOf(property.defaultJsonType.uppercase()).value
+                        }.getOrElse {
+                            throw IllegalArgumentException("非法的 JSON 字段默认类型：${property.defaultJsonType}")
                         }
-                        hasNull = if(value.contains("?")) TypeEnum.YES else TypeEnum.NO
                     }
+                    if(hasNull == TypeEnum.DEFAULT) hasNull = if(fieldType.contains("?")) TypeEnum.YES else TypeEnum.NO
                     if(type == TypeEnum.CHAR.value && size == 0) size = 255
                     if(type == TypeEnum.VARCHAR.value && size == 0) size = 255
                     FieldData(

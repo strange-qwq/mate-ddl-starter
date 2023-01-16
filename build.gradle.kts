@@ -1,11 +1,11 @@
 plugins {
     signing
     `maven-publish`
-    kotlin("jvm") version "1.7.21"
+    kotlin("jvm") version "1.8.0"
 }
 
 group = "io.github.strange-qwq"
-version = "1.0"
+version = "1.1"
 
 java {
     withSourcesJar()
@@ -23,7 +23,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter")
 
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    // implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
 
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
